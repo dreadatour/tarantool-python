@@ -5,7 +5,7 @@ This package is a pure-python client library for `Tarantool`_.
 
 `Documentation`_  |  `Downloads`_  |  `PyPI`_  |  `GitHub`_  | `Issue tracker`_
 
-.. _`Documentation`: http://packages.python.org/tarantool
+.. _`Documentation`: http://tarantool-python.readthedocs.org/en/latest/
 .. _`Downloads`: http://pypi.python.org/pypi/tarantool#downloads
 .. _`PyPI`: http://pypi.python.org/pypi/tarantool
 .. _`GitHub`: https://github.com/tarantool/tarantool-python
@@ -78,6 +78,6 @@ See More
 .. _`Tarantool Homepage`: http://tarantool.org
 .. _`Tarantool at Github`: https://github.com/tarantool/tarantool
 .. _`Tarantool User Guide`: http://tarantool.org/doc/user_guide.html
-.. _`Client-server protocol specification`: https://raw.github.com/tarantool/tarantool/master/doc/box-protocol.txt
+.. _`Client-server protocol specification`: http://tarantool.org/doc/dev_guide/box-protocol.html
 .. _`Sophia`: http://sphia.org
 .. _`BSD licensed`: http://www.gnu.org/licenses/license-list.html#ModifiedBSD

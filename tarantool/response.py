@@ -3,13 +3,13 @@
 
 import sys
 import msgpack
+import yaml
 
 from tarantool.const import (
     IPROTO_CODE,
     IPROTO_DATA,
     IPROTO_ERROR,
     IPROTO_SYNC,
-    REQUEST_TYPE_OK,
     REQUEST_TYPE_ERROR
 )
 from tarantool.error import DatabaseError, tnt_strerror
@@ -17,9 +17,9 @@ from tarantool.error import DatabaseError, tnt_strerror
 if sys.version_info < (2, 6):
     bytes = str    # pylint: disable=W0622
 
-class Response(list):
 
-    '''\
+class Response(list):
+    '''
     Represents a single response from the server in compliance with the
     Tarantool protocol.
     Responsible for data encapsulation (i.e. received list of tuples)
@@ -27,7 +27,7 @@ class Response(list):
     '''
 
     def __init__(self, conn, response):
-        '''\
+        '''
         Create an instance of `Response` using data received from the server.
 
         __init__() itself reads data from the socket, parses response body and
@@ -41,34 +41,40 @@ class Response(list):
         # created in the __new__(). But let it be.
         super(Response, self).__init__()
 
-        unpacker = msgpack.Unpacker(use_list = False)
+        unpacker = msgpack.Unpacker(use_list=True)
         unpacker.feed(response)
         header = unpacker.unpack()
 
         self._sync = header.get(IPROTO_SYNC, 0)
         self.conn = conn
-        code = header[IPROTO_CODE]
-        body = None
+        self._code = header[IPROTO_CODE]
+        self._body = {}
         try:
-            body = unpacker.unpack()
+            self._body = unpacker.unpack()
         except msgpack.OutOfData:
-            body = {}
+            pass
 
-        if code == REQUEST_TYPE_OK:
-            self._return_code = 0;
+        if self._code < REQUEST_TYPE_ERROR:
+            self._return_code = 0
             self._completion_status = 0
-            self.extend(body.get(IPROTO_DATA, []))
+            self._data = self._body.get(IPROTO_DATA, None)
+            # Backward-compatibility
+            if isinstance(self._data, (list, tuple)):
+                self.extend(self._data)
+            else:
+                self.append(self._data)
         else:
             # Separate return_code and completion_code
-            self._return_message = body.get(IPROTO_ERROR, "")
-            self._return_code = code & (REQUEST_TYPE_ERROR - 1)
+            self._return_message = self._body.get(IPROTO_ERROR, "")
+            self._return_code = self._code & (REQUEST_TYPE_ERROR - 1)
             self._completion_status = 2
+            self._data = None
             if self.conn.error:
                 raise DatabaseError(self._return_code, self._return_message)
 
     @property
     def completion_status(self):
-        '''\
+        '''
         :type: int
 
         Request completion status.
@@ -85,7 +91,7 @@ class Response(list):
 
     @property
     def rowcount(self):
-        '''\
+        '''
         :type: int
 
         Number of rows affected or returned by a query.
@@ -93,8 +99,28 @@ class Response(list):
         return len(self)
 
     @property
+    def body(self):
+        '''
+        :type: dict
+
+        Required field in the server response.
+        Contains raw response body.
+        '''
+        return self._body
+
+    @property
+    def code(self):
+        '''
+        :type: int
+
+        Required field in the server response.
+        Contains response type id.
+        '''
+        return self._code
+
+    @property
     def return_code(self):
-        '''\
+        '''
         :type: int
 
         Required field in the server response.
@@ -106,17 +132,29 @@ class Response(list):
         return self._return_code
 
     @property
+    def data(self):
+        '''
+        :type: object
+
+        Required field in the server response.
+        Contains list of tuples of SELECT, REPLACE and DELETE requests
+        and arbitrary data for CALL.
+        '''
+        return self._data
+
+    @property
     def strerror(self):
-        '''\
+        '''
         :type: str
 
-        It may be ER_OK if request was successful, or contain error code string.
+        It may be ER_OK if request was successful,
+        or contain error code string.
         '''
         return tnt_strerror(self._return_code)
 
     @property
     def return_message(self):
-        '''\
+        '''
         :type: str
 
         The error message returned by the server in case
@@ -125,19 +163,17 @@ class Response(list):
         return self._return_message
 
     def __str__(self):
-        '''\
+        '''
         Return user friendy string representation of the object.
         Useful for the interactive sessions and debuging.
 
         :rtype: str or None
         '''
-        errstr = "---\n- error:\n    errcode: {errname}\n    errmsg: {errstr}\n..."
         if self.completion_status:
-            return errstr.format(errname = self.strerror,
-                                 errstr  = self.return_message)
-        table = ""
-        if len(self):
-            table = "\n"+"\n".join(["- "+str(list(k)) for k in self])
-        return "---{0}\n...".format(table)
+            return yaml.dump({'error': {
+                'code': self.strerror[0],
+                'reason': self.return_message
+            }})
+        return yaml.dump(self._data)
 
     __repr__ = __str__

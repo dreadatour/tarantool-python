@@ -19,6 +19,10 @@ from tarantool.const import (
     IPROTO_TUPLE,
     IPROTO_FUNCTION_NAME,
     IPROTO_ITERATOR,
+    IPROTO_SERVER_UUID,
+    IPROTO_CLUSTER_UUID,
+    IPROTO_VCLOCK,
+    IPROTO_EXPR,
     REQUEST_TYPE_PING,
     REQUEST_TYPE_SELECT,
     REQUEST_TYPE_INSERT,
@@ -26,13 +30,15 @@ from tarantool.const import (
     REQUEST_TYPE_DELETE,
     REQUEST_TYPE_UPDATE,
     REQUEST_TYPE_CALL,
-    REQUEST_TYPE_AUTHENTICATE
+    REQUEST_TYPE_EVAL,
+    REQUEST_TYPE_AUTHENTICATE,
+    REQUEST_TYPE_JOIN,
+    REQUEST_TYPE_SUBSCRIBE
 )
 
 
 class Request(object):
-
-    '''\
+    '''
     Represents a single request to the server in compliance with the
     Tarantool protocol.
     Responsible for data encapsulation and builds binary packet
@@ -53,73 +59,77 @@ class Request(object):
 
     @classmethod
     def header(cls, length):
-        header = msgpack.dumps({ IPROTO_CODE : cls.request_type,
-                                IPROTO_SYNC : 0})
+        header = msgpack.dumps({IPROTO_CODE: cls.request_type,
+                                IPROTO_SYNC: 0})
         return msgpack.dumps(length + len(header)) + header
 
-class RequestInsert(Request):
 
-    '''\
+class RequestInsert(Request):
+    '''
     Represents INSERT request
     '''
     request_type = REQUEST_TYPE_INSERT
 
     # pylint: disable=W0231
     def __init__(self, conn, space_no, values):
-        '''\
+        '''
         '''
         super(RequestInsert, self).__init__(conn)
         assert isinstance(values, (tuple, list))
 
-        request_body = msgpack.dumps({ IPROTO_SPACE_ID: space_no, \
-                                       IPROTO_TUPLE: values })
+        request_body = msgpack.dumps({IPROTO_SPACE_ID: space_no,
+                                      IPROTO_TUPLE: values})
 
         self._bytes = self.header(len(request_body)) + request_body
 
+
 class RequestAuthenticate(Request):
-
+    '''
+    Represents AUTHENTICATE request
+    '''
     request_type = REQUEST_TYPE_AUTHENTICATE
-
 
     def __init__(self, conn, salt, user, password):
         super(RequestAuthenticate, self).__init__(conn)
+
         def sha1(values):
             sha1 = hashlib.sha1()
             for i in values:
                 sha1.update(i)
             return sha1.digest()
+
         def strxor(rhs, lhs):
                 return "".join(chr(ord(x) ^ ord(y)) for x, y in zip(rhs, lhs))
+
         hash1 = sha1((password,))
         hash2 = sha1((hash1,))
         scramble = sha1((salt, hash2))
         scramble = strxor(hash1, scramble)
-        request_body = msgpack.dumps({IPROTO_USER_NAME: user, \
+        request_body = msgpack.dumps({IPROTO_USER_NAME: user,
                                       IPROTO_TUPLE: ("chap-sha1", scramble)})
         self._bytes = self.header(len(request_body)) + request_body
 
-class RequestReplace(Request):
 
-    '''\
+class RequestReplace(Request):
+    '''
     Represents REPLACE request
     '''
     request_type = REQUEST_TYPE_REPLACE
 
     # pylint: disable=W0231
     def __init__(self, conn, space_no, values):
-        '''\
+        '''
         '''
         super(RequestReplace, self).__init__(conn)
         assert isinstance(values, (tuple, list))
 
-        request_body = msgpack.dumps({ IPROTO_SPACE_ID: space_no, \
-                                       IPROTO_TUPLE: values })
+        request_body = msgpack.dumps({IPROTO_SPACE_ID: space_no,
+                                      IPROTO_TUPLE: values})
 
         self._bytes = self.header(len(request_body)) + request_body
 
 
 class RequestDelete(Request):
-
     '''
     Represents DELETE request
     '''
@@ -131,16 +141,15 @@ class RequestDelete(Request):
         '''
         super(RequestDelete, self).__init__(conn)
 
-        request_body = msgpack.dumps({ IPROTO_SPACE_ID: space_no, \
-                                       IPROTO_INDEX_ID: index_no, \
-                                       IPROTO_KEY: key})
+        request_body = msgpack.dumps({IPROTO_SPACE_ID: space_no,
+                                      IPROTO_INDEX_ID: index_no,
+                                      IPROTO_KEY: key})
 
         self._bytes = self.header(len(request_body)) + request_body
 
 
 class RequestSelect(Request):
-
-    '''\
+    '''
     Represents SELECT request
     '''
     request_type = REQUEST_TYPE_SELECT
@@ -148,20 +157,19 @@ class RequestSelect(Request):
     # pylint: disable=W0231
     def __init__(self, conn, space_no, index_no, key, offset, limit, iterator):
         super(RequestSelect, self).__init__(conn)
-        request_body = msgpack.dumps({ IPROTO_SPACE_ID: space_no, \
-                                       IPROTO_INDEX_ID: index_no, \
-                                       IPROTO_OFFSET: offset, \
-                                       IPROTO_LIMIT: limit, \
-                                       IPROTO_ITERATOR: iterator, \
-                                       IPROTO_KEY: key})
+        request_body = msgpack.dumps({IPROTO_SPACE_ID: space_no,
+                                      IPROTO_INDEX_ID: index_no,
+                                      IPROTO_OFFSET: offset,
+                                      IPROTO_LIMIT: limit,
+                                      IPROTO_ITERATOR: iterator,
+                                      IPROTO_KEY: key})
 
         self._bytes = self.header(len(request_body)) + request_body
 
 
 class RequestUpdate(Request):
-
-    '''\
-        Represents UPDATE request
+    '''
+    Represents UPDATE request
     '''
 
     request_type = REQUEST_TYPE_UPDATE
@@ -170,17 +178,17 @@ class RequestUpdate(Request):
     def __init__(self, conn, space_no, index_no, key, op_list):
         super(RequestUpdate, self).__init__(conn)
 
-        request_body = msgpack.dumps({ IPROTO_SPACE_ID: space_no, \
-                                       IPROTO_INDEX_ID: index_no, \
-                                       IPROTO_KEY: key, \
-                                       IPROTO_TUPLE: op_list })
+        request_body = msgpack.dumps({IPROTO_SPACE_ID: space_no,
+                                      IPROTO_INDEX_ID: index_no,
+                                      IPROTO_KEY: key,
+                                      IPROTO_TUPLE: op_list})
 
         self._bytes = self.header(len(request_body)) + request_body
 
-class RequestCall(Request):
 
+class RequestCall(Request):
     '''
-        Represents CALL request
+    Represents CALL request
     '''
     request_type = REQUEST_TYPE_CALL
 
@@ -189,14 +197,30 @@ class RequestCall(Request):
         super(RequestCall, self).__init__(conn)
         assert isinstance(args, (list, tuple))
 
-        request_body = msgpack.dumps({ IPROTO_FUNCTION_NAME: name, \
-                                       IPROTO_TUPLE: args })
+        request_body = msgpack.dumps({IPROTO_FUNCTION_NAME: name,
+                                      IPROTO_TUPLE: args})
+
+        self._bytes = self.header(len(request_body)) + request_body
+
+
+class RequestEval(Request):
+    '''
+    Represents EVAL request
+    '''
+    request_type = REQUEST_TYPE_EVAL
+
+    # pylint: disable=W0231
+    def __init__(self, conn, name, args):
+        super(RequestEval, self).__init__(conn)
+        assert isinstance(args, (list, tuple))
+
+        request_body = msgpack.dumps({IPROTO_EXPR: name,
+                                      IPROTO_TUPLE: args})
 
         self._bytes = self.header(len(request_body)) + request_body
 
 
 class RequestPing(Request):
-
     '''
     Ping body is empty, so body_length == 0 and there's no body
     '''
@@ -205,3 +229,35 @@ class RequestPing(Request):
     def __init__(self, conn):
         super(RequestPing, self).__init__(conn)
         self._bytes = self.header(0)
+
+
+class RequestJoin(Request):
+    '''
+    Represents JOIN request
+    '''
+    request_type = REQUEST_TYPE_JOIN
+
+    # pylint: disable=W0231
+    def __init__(self, conn, server_uuid):
+        super(RequestJoin, self).__init__(conn)
+        request_body = msgpack.dumps({IPROTO_SERVER_UUID: server_uuid})
+        self._bytes = self.header(len(request_body)) + request_body
+
+
+class RequestSubscribe(Request):
+    '''
+    Represents SUBSCRIBE request
+    '''
+    request_type = REQUEST_TYPE_SUBSCRIBE
+
+    # pylint: disable=W0231
+    def __init__(self, conn, cluster_uuid, server_uuid, vclock):
+        super(RequestSubscribe, self).__init__(conn)
+        assert isinstance(vclock, dict)
+
+        request_body = msgpack.dumps({
+            IPROTO_CLUSTER_UUID: cluster_uuid,
+            IPROTO_SERVER_UUID: server_uuid,
+            IPROTO_VCLOCK: vclock
+        })
+        self._bytes = self.header(len(request_body)) + request_body
