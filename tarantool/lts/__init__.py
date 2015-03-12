@@ -25,7 +25,7 @@ from tarantool.lts.error import (
 
 
 def connect(host="localhost", port=33013, schema=None, return_tuple=True):
-    '''\
+    '''
     Create a connection to the Tarantool server.
 
     :param str host: Server hostname or IP-address
@@ -33,7 +33,8 @@ def connect(host="localhost", port=33013, schema=None, return_tuple=True):
     :param schema: Data schema (see Developer guide
         and :class:`~tarantool.lts.schema.Schema`)
     :type schema: :class:`~tarantool.lts.schema.Schema` or dict
-    :param bool return_tuple: Return tuple by default, in update/delete/insert operations.
+    :param bool return_tuple: Return tuple by default,
+        in update/delete/insert operations.
 
     :rtype: :class:`~tarantool.lts.connection.Connection`
     :raise: `NetworkError`

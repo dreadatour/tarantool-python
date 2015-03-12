@@ -25,7 +25,7 @@ from tarantool.schema import (
 
 
 def connect(host="localhost", port=33013):
-    '''\
+    '''
     Create a connection to the Tarantool server.
 
     :param str host: Server hostname or IP-address
