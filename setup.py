@@ -83,5 +83,10 @@ setup(
     command_options=command_options,
     install_requires=[
         'msgpack-python>=0.4',
+        'pyyaml'
+    ],
+    tests_require=[
+        'msgpack-python>=0.4',
+        'pyyaml'
     ]
 )
